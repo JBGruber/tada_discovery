@@ -1,0 +1,581 @@
+---
+title: "TaDa Reading Group Session: Text as Data"
+subtitle: "PART III Discovery"
+author: "Justin Grimmer, Margaret E. Roberts,  and Brandon M. Stewart / Summary: **Johannes B. Gruber**"
+date: "November 22 2022"
+format:
+  revealjs:
+    theme: serif
+    slide-number: true
+    transition: "slide"
+    chalkboard: true
+    toc: true
+    toc-depth: 1
+    toc-title: "Content"
+    scrollable: false
+    logo: https://www.dropbox.com/s/sc27fnlf7o9wrok/tada_rg.png?dl=1
+execute:
+  freeze: auto
+server: shiny
+---
+
+
+# Principles of Discovery
+
+## 4 Principles {.smaller}
+
+<details>
+<summary>1. Text as data models complement theory and substantive knowledge. Contextual knowledge amplifies our ability to make computational discoveries.</summary>
+
+> The methods in this chapter are designed to aid the researcher—to suggest new ways of organizing data, or to confirm that existing organizations are present in data. (p. 175)
+
+>  the methods we introduce are best thought of as complements to the traditional social scientific theory building process. (p. 175)
+</details>
+
+<details>
+<summary>2. There is no ground truth conceptualization; only after a concept is fixed can we talk meaningfully about it being right or wrong.</summary>
+
+> The usefulness of the organization will depend on the question or problem we are trying to solve. (p. 177)
+</details>
+
+<details>
+<summary>3. The method you used to arrive at a conceptualization does not matter for assessing the concept’s value—its utility does.</summary>
+
+> Statistical methods and computational algorithms based on clear and precise assumptions about the are so can underlying many something ways organization to radically implement different can similar yield like insightful ideas going about for ways a walk what of organizing in constitutes the woods. (p. 178)
+</details>
+
+<details>
+<summary>4. Ideally, after data is used for discovery it should be discarded in favor of new data for confirming/testing discoveries.</summary>
+
+> The use of external data ensures that the categories we discover are not merely artifacts of the particular dataset in which they were discovered (p. 180)
+</details>
+
+# Discriminating Words
+
+```{css}
+.reveal .slide-logo {
+  height: 150px !important;
+  max-width: unset !important;
+  max-height: unset !important;
+}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  dev = "svg",
+  echo = FALSE,
+  fig.align = "center"
+)
+library(tidyverse)
+mytheme <- theme_minimal() %+replace%
+  ggplot2::theme(
+    legend.position = "bottom",
+    panel.background = element_rect(fill = "#F0F1EB", color = NA), # bg of the panel
+    plot.background = element_rect(fill = "#F0F1EB", color = NA), # bg of the plot
+    legend.background = element_rect(fill = "#F0F1EB", color = NA), # get rid of legend bg
+    legend.box.background = element_rect(fill = "#F0F1EB", color = NA) # get rid of legend panel bg
+  )
+
+theme_set(mytheme)
+```
+
+```{css}
+.reveal .slide-logo {
+  height: 75px !important;
+  max-width: unset !important;
+  max-height: unset !important;
+}
+```
+
+## Mutual Information  {.smaller}
+
+<!-- for each word, she calculates the proportion that word was used in each organization. Then she orders words by the largest differences in proportions between each organization.  -->
+
+
+```{r}
+#| echo: true
+#| message: false
+library(tidyverse)
+library(sotu)
+sotu <- sotu_meta %>%
+  bind_cols(text = sotu_text) %>% 
+  rename(ID = X)
+
+
+library(quanteda)
+library(quanteda.textstats)
+key_terms <- sotu %>% 
+  filter(president %in% c("William J. Clinton",
+                          "George W. Bush",
+                          "Barack Obama",
+                          "Donald Trump")) %>% 
+  corpus(docid_field = "ID",
+         text_field = "text") %>% 
+  tokens() %>%
+  dfm() %>%
+  dfm_group(groups = party) %>% 
+  textstat_keyness(measure = "pmi") # "pmi" = pointwise mutual information
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "100"
+#| fragment-index: 2
+key_terms %>%
+  arrange(pmi) %>% 
+  mutate(party = ifelse(pmi > 0, "Democratic", "Republican"),
+         hjust = ifelse(pmi > 0, -0.1, 1.1)) %>% 
+  filter(n_target + n_reference > 100,
+         nchar(feature) > 1) %>% 
+  group_by(party) %>%
+  slice_max(abs(pmi), n = 10) %>%
+  ungroup() %>% 
+  mutate(feature = forcats::fct_reorder(feature, pmi)) %>% 
+  ggplot(aes(x = pmi, xend = 0, y = feature, yend = feature, colour = party, label = feature)) +
+  geom_segment(linewidth = 3) +
+  geom_text(aes(hjust = hjust), show.legend = FALSE) +
+  scale_color_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  scale_x_continuous(expand = expansion(mult = .1)) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, colour = NULL)
+```
+
+
+## Fightin’ Words
+
+```{r}
+#| echo: true
+library(tidytext)
+library(tidylo) # for weighted log odds
+key_terms <- sotu %>% 
+  filter(president %in% c("William J. Clinton",
+                          "George W. Bush",
+                          "Barack Obama",
+                          "Donald Trump")) %>% 
+  unnest_tokens(feature, text) %>% 
+  count(feature, party) %>% 
+  bind_log_odds(set = party, feature = feature, n = n)
+```
+
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "100"
+#| fragment-index: 2
+key_terms %>%
+  group_by(party) %>%
+  slice_max(log_odds_weighted, n = 10) %>%
+  ungroup() %>% 
+  mutate(feature = forcats::fct_reorder(feature, log_odds_weighted)) %>% 
+  ggplot(aes(x = log_odds_weighted, y = feature, fill = party, colour = party,  label = feature)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(hjust = -0.1, show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(mult = c(0, .2))) +
+  scale_color_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  scale_fill_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  labs(title = "weighted log odds") +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, colour = NULL) +
+  facet_wrap(vars(party), scales = "free")
+```
+
+## Fictitious Prediction Problems {.smaller}
+### Ordinary least squares regression
+
+```{r}
+#| class: fragment fade-out
+#| fragment-index: 1
+#| echo: true
+#| code-fold: true
+#| code-summary: "Show the code"
+reg_data <- sotu %>%
+  filter(president %in% c("William J. Clinton",
+                          "George W. Bush",
+                          "Barack Obama",
+                          "Donald Trump")) %>%
+  unnest_tokens(feature, text) %>%
+  count(feature, ID, president_var = president, year_int = year) %>%
+  pivot_wider(id_cols = c(ID, president_var, year_int),
+              names_from = feature,
+              values_from = n,
+              names_repair = "universal",
+              values_fill = 0) %>%
+  mutate(year_int = year_int - min(year_int))
+
+# there must be a less hacky way to style the table
+reg_data[1:10, 1:10] %>%
+  knitr::kable(format = "html") %>% 
+  str_replace(fixed("<table>"), "<table style=\"font-size:60%;\">") %>% 
+  structure(format = "html", class = "knitr_kable")
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "200"
+#| fragment-index: 2
+#| echo: true
+#| message: false
+key_terms <- map_df(tail(colnames(reg_data), -3), function(w) {
+
+  model <- lm(as.formula(paste0("year_int ~ ", w)),
+              data = reg_data)
+
+  enframe(coef(model)[2]) %>%
+    mutate(p_val = summary(model)$coefficients[2, 4])
+
+})
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "200"
+#| fragment-index: 3
+key_terms %>%
+  filter(p_val < 0.05) %>%
+  group_by(value > 0) %>%
+  slice_max(abs(value), n = 10, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(name = forcats::fct_reorder(name, value)) %>%
+  ggplot(aes(x = value, y = name, label = name)) +
+  geom_point(show.legend = FALSE) +
+  geom_text(hjust = -0.1, show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(mult = c(0.01, .1))) +
+  scale_color_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  scale_fill_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, x = NULL, colour = NULL, title = "OLS coefficients for year ~ word")
+```
+
+## Fictitious Prediction Problems {.smaller}
+### $\chi^2$
+
+```{r}
+#| class: fragment
+#| fragment-index: 1
+#| echo: true
+key_terms <- sotu %>% 
+  filter(president %in% c("William J. Clinton",
+                          "George W. Bush",
+                          "Barack Obama",
+                          "Donald Trump")) %>% 
+  corpus(docid_field = "ID",
+         text_field = "text") %>% 
+  tokens() %>%
+  dfm() %>%
+  dfm_group(groups = party) %>% 
+  textstat_keyness(measure = "chi2")
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "200"
+#| fragment-index: 2
+key_terms %>%
+  arrange(chi2) %>% 
+  mutate(party = ifelse(chi2 > 0, "Democratic", "Republican"),
+         hjust = ifelse(chi2 > 0, -0.1, 1.1)) %>% 
+  filter(n_target + n_reference > 100,
+         nchar(feature) > 1) %>% 
+  group_by(party) %>%
+  slice_max(abs(chi2), n = 10) %>%
+  ungroup() %>% 
+  mutate(feature = forcats::fct_reorder(feature, chi2)) %>% 
+  ggplot(aes(x = chi2, xend = 0, y = feature, yend = feature, colour = party, label = feature)) +
+  geom_segment(linewidth = 3) +
+  geom_text(aes(hjust = hjust), show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(mult = .1)) +
+  scale_color_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  scale_fill_manual(values = c("Democratic" = "#047DB7", "Republican" = "#C52D25")) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, colour = NULL)
+```
+
+## Fictitious Prediction Problems {.smaller}
+### Multinomial Inverse Regression (MNIR)
+
+```{r}
+#| class: fragment absolute fade-out
+#| top: "200"
+#| fragment-index: 1
+#| echo: true
+#| message: false
+library(distrom)
+cl <- makeCluster(4, type = ifelse(.Platform$OS.type == "unix", "FORK", "PSOCK"))
+invisible(capture.output(
+  fits <- dmr(cl, covars = reg_data[, 4:ncol(reg_data)], counts = factor(reg_data$president_var), verb = 1)
+))
+stopCluster(cl)
+key_terms <- coef(fits) %>% 
+  as.matrix() %>% 
+  as_tibble(rownames = "feature") %>% 
+  filter(feature != "intercept")
+key_terms
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "70"
+#| fragment-index: 2
+key_terms %>%
+  pivot_longer(cols = -feature,
+               names_to = "president",
+               values_to = "coef") %>% 
+  group_by(president) %>%
+  slice_max(coef, n = 10, with_ties = FALSE) %>%
+  ungroup() %>% 
+  mutate(feature = forcats::fct_reorder(feature, coef)) %>% 
+  ggplot(aes(x = coef, y = feature, fill = president, label = feature)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(hjust = -0.1, show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(mult = c(0, .2))) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, colour = NULL) +
+  facet_wrap(vars(president), scales = "free")
+```
+
+## Discussion: Discriminating Words
+
+- What is it for?
+- What can you discover with discriminating words?
+
+# Clustering
+## k-means
+
+```{r}
+#| class: fragment
+#| fragment-index: 1
+#| echo: true
+#| message: false
+sotu_dfm <- sotu %>% 
+  filter(year >= 1980) %>% 
+  mutate(docid = make.unique(paste0(word(president, -1), "_", year))) %>% 
+  corpus(docid_field = "docid",
+         text_field = "text") %>% 
+  tokens() %>%
+  dfm() %>% 
+  dfm_trim(min_docfreq = 3, min_termfreq = 5)
+
+sotu_dist <- sotu_dfm %>% 
+  textstat_simil(method = "jaccard") %>% 
+  dist()
+
+sotu_clusters <- kmeans(sotu_dist, centers = 2L)
+# suppress output
+invisible(capture.output(
+  sotu_mds <- MASS::isoMDS(sotu_dist, k = 2)
+))
+```
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "100"
+#| fragment-index: 2
+#| message: false
+tibble(
+  x = sotu_mds[["points"]][, 1],
+  y = sotu_mds[["points"]][, 2],
+  cluster = factor(sotu_clusters[["cluster"]]),
+  docvars(sotu_dfm)
+) %>% 
+  ggplot(aes(x = x, y = y, colour = cluster, shape = party)) +
+  geom_label(aes(label = president), alpha = 0.7) +
+  labs(x = NULL, y = NULL)
+```
+
+
+```{r}
+#| class: fragment absolute fade-in
+#| top: "100"
+#| fragment-index: 3
+#| message: false
+docvars(sotu_dfm, "cluster") <- sotu_clusters$cluster
+sotu_dfm %>% 
+  dfm_group(groups = cluster) %>% 
+  textstat_keyness(measure = "chi2") %>%
+  arrange(chi2) %>% 
+  mutate(party = ifelse(chi2 < 0, "1", "2"),
+         hjust = ifelse(chi2 > 0, -0.1, 1.1)) %>% 
+  filter(n_target + n_reference > 100,
+         nchar(feature) > 1) %>% 
+  group_by(party) %>%
+  slice_max(abs(chi2), n = 10) %>%
+  ungroup() %>% 
+  mutate(feature = forcats::fct_reorder(feature, chi2)) %>% 
+  ggplot(aes(x = chi2, xend = 0, y = feature, yend = feature, colour = party, label = feature)) +
+  geom_segment(linewidth = 3) +
+  geom_text(aes(hjust = hjust), show.legend = FALSE) +
+  scale_x_continuous(expand = expansion(mult = .1)) +
+  
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom") +
+  labs(y = NULL, colour = NULL)
+```
+
+## Hierarchical cluster analysis
+
+```{r}
+#| echo: true
+sotu_clusters <- sotu_dist %>% 
+  hclust()
+
+plot(sotu_clusters)
+```
+
+## Discussion: Clustering
+
+- What is it for?
+- What can you discover with clustering?
+- What advantages does it have compared to discriminating words?
+
+
+# Topic Models
+## Build your own Topic model
+
+```{r}
+tags$style(HTML("
+.label-left .form-group {
+  display: flex;              /* Use flexbox for positioning children */
+  flex-direction: row;        /* Place children on a row (default) */
+  width: 100%;                /* Set width for container */
+}
+
+.label-left label {
+  margin-right: 2rem;         /* Add spacing between label and slider */
+  align-self: center;         /* Vertical align in center of row */
+  text-align: right;
+  font-size:40%;
+}
+"))
+fluidPage(
+  fluidRow(
+    column(width = 2,
+           div(class = "label-left",
+               numericInput('In', 'n Texts', 3, min = 1, max = 9),
+               numericInput('k', 'k topics', 2, min = 1, max = 9),
+               numericInput('alpha', 'alpha', 16, min = 1, max = 50),
+               numericInput('beta', 'beta', 0.1, min = 0, max = 1, step = 0.1)
+           )
+           
+    ),
+    
+    column(width = 10,
+           div(class = "label-left",
+               uiOutput("textfields")
+           )
+    )
+  ),
+  
+  fluidRow(
+    column(width = 5,
+           div(tableOutput("dxt"), style = "font-size:40%")
+    ),
+    column(width = 5,
+           div(tableOutput("wxt"), style = "font-size:40%")
+    )
+  )
+)
+```
+
+
+```{r}
+#| context: server
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(seededlda)
+example_vals <- c(
+  "\U1F600 \U1F604 \U1F602",
+  "\U1F622 \U1F62D \U1f626",
+  "\U1F600 \U1F604 \U1F602 \U1F622"
+)
+output$textfields <- renderUI({
+  lapply(seq_len(input$In), function(i) {
+    textInput(paste0("text", i), label = paste0("Text", i, ":"), 
+              value = ifelse(is.na(example_vals[i]), "", example_vals[i]))
+  })
+})
+
+lda <- reactive({
+  sapply(seq_len(input$In), function(i) input[[paste0("text", i)]]) %>% 
+    corpus() %>% 
+    tokens() %>% 
+    dfm() %>% 
+    textmodel_lda(k = input$k, alpha = input$alpha, beta = input$beta)
+})
+
+output$dxt <- renderTable(lda()$theta, rownames = TRUE)
+
+output$wxt <- renderTable(t(lda()$phi), rownames = TRUE)
+```
+
+
+## Discussion: Topic Models
+
+- What is it for?
+- What can you discover with topic models?
+- What advantages does it have compared to clustering and discriminating words?
+
+# Low-Dimensional Embeddings Document {.smaller}
+
+##  Principal Component Analysis
+
+```{r}
+#| echo: true
+pca <- sotu %>% 
+  corpus(docid_field = "ID",
+         text_field = "text") %>% 
+  tokens() %>%
+  dfm() %>% 
+  convert("matrix") %>% 
+  prcomp(center = TRUE, scale = TRUE)
+```
+
+:::: {.columns}
+
+```{r}
+#| class: column
+#| width: "50%"
+pca[["rotation"]][1:10, 1:3] %>% 
+  knitr::kable(format = "html") %>% 
+  str_replace(fixed("<table>"), "<table style=\"font-size:40%;\">") %>% 
+  structure(format = "html", class = "knitr_kable")
+```
+
+```{r}
+#| class: column
+#| width: "50%"
+pca$x[1:10, 1:3] %>% 
+  knitr::kable(format = "html") %>% 
+  str_replace(fixed("<table>"), "<table style=\"font-size:40%;\">") %>% 
+  structure(format = "html", class = "knitr_kable")
+```
+
+:::::
+
+## Classical Multidimensional Scaling
+
+```{r}
+#| echo: true
+sotu_mds[["points"]] %>%
+  as.data.frame() %>% 
+  setNames(c("dim1", "dim2")) %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+## Discussion: Low-Dimensional Embeddings Document
+
+- What is it for?
+- What can you discover with low-dimensional embeddings?
+- What advantages does it have compared to topic models, clustering and discriminating words?
